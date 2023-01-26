@@ -1,0 +1,94 @@
+#ETL pipelines - Extranct, Transform, Load
+# import libraries
+import requests
+import json
+import pandas as pd
+from pandas.io.json import json_normalize
+from sqlalchemy import create_engine
+
+#Function to get URI to use with API
+def get_URI(query:str, page_num:str, date:str, API_KEY:str) -> str:
+    """# obtain the URI for access to articles for a given query, page number, and date"""
+    
+    # append query to uri
+    URI = f'https://api.nytimes.com/svc/search/v2/articlesearch.json?q={query}'
+    
+    # add page_num and date parameters
+    URI = URI + f'&page={page_num}&begin_date={date}&end_date={date}'
+    
+    # add API key
+    URI = URI + f'&api-key={API_KEY}'
+    
+    # return the new URI 
+    return URI
+    
+    import time 
+import datetime 
+
+# create a dataframe that will store all articles 
+df = pd.DataFrame()
+
+# get current date
+current_date = datetime.datetime.now().strftime('%Y%m%d')
+
+# collect data from all available pages
+page_num = 1
+
+# search for and replace any duplicate articles
+if len(df['_id'].unique()) < len(df):
+    print('There are duplicates in the data')
+    df = df.drop_duplicates('_id', keep='first')
+
+# search for and replace articles with missing headlines
+if df['headline.main'].isnull().any():
+    print('There are missing values in this dataset')
+    df = df[df['headlinee.main'].isnull()==False]
+
+# filter out any op-eds
+df = df[df['type_of_material']!='op-ed']
+
+# keep only headline, publication_date, author name, and url
+df = df[['headline.main', 'pub_date', 'byline.original', 'web_url']]
+
+# rename columns
+df.columns = ['headline', 'date', 'author', 'url']
+while True:
+    # get the URI needed for the articles related to Winter Olympics from newest to oldest
+    URI = get_URI(query='COVID', page_num=str(page_num), date=current_date, API_KEY=API_KEY)
+
+    # make a request with the url
+    response = requests.get(URI)
+
+    # collect the data from the response in JSON format
+    data = response.json() 
+
+    # convert data to a data frame
+    df_request = json_normalize(data['response'], record_path=['docs'])
+
+    # end loop if no new articles are available 
+    if df_request.empty:
+        break
+
+    # append df_request to the dataframe
+    df = pd.concat([df, df_request])
+
+    # pause to stay within the limit of number of requests
+    time.sleep(6)
+
+    # go to the next page
+    page_num += 1
+# dataset features
+df.info()
+
+database_loc = f"postgresql://{username}:{password}@localhost:5432/{database}"
+engine = create_engine(database_loc)
+
+# add data to database
+df_test.to_sql(name='news_articles',
+         con=engine,
+         index=False,
+         if_exists='append')
+-- Preview of dataset in database
+SELECT *
+FROM news_articles
+LIMIT 5;
